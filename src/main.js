@@ -90,10 +90,11 @@ function pinchState() {
 }
 
 function orbitBy(dx, dy) {
-  // 灵敏度随视口高度自适应：整屏高约转 2π*0.4，接近 SuperSplat 手感
-  const sens = (Math.PI * 2 * 0.4) / Math.max(window.innerHeight, 1);
+  // 对齐 SuperSplat 默认灵敏度：orbitSensitivity 0.3（scene-config.ts:39）
+  // playcanvas 角度制 = 0.3°/px ≈ 0.00524 rad/px
+  const sens = orbitSensitivity * Math.PI / 180;
   orbit.azim -= dx * sens;
-  orbit.elev -= dy * sens;
+  orbit.elev += dy * sens;  // 垂直方向反转：下拖=视角升高（手感对齐习惯）
   applyCamera();
 }
 
@@ -155,6 +156,44 @@ canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   zoomBy(Math.exp(e.deltaY * 0.0012));
 }, { passive: false });
+
+// ---- 设置面板 ----
+const settingsBtn = document.getElementById('settingsBtn');
+const settingsPanel = document.getElementById('settingsPanel');
+const sensRange = document.getElementById('sensRange');
+const sensVal = document.getElementById('sensVal');
+const gridToggle = document.getElementById('gridToggle');
+const axesToggle = document.getElementById('axesToggle');
+
+// 设置点击不穿透到画布手势
+for (const el of [settingsBtn, settingsPanel]) {
+  el.addEventListener('pointerdown', (e) => e.stopPropagation());
+}
+settingsBtn.addEventListener('click', () => settingsPanel.classList.toggle('open'));
+
+// 旋转灵敏度（0.1 ~ 1.0 °/px，默认 0.3 = SuperSplat 同款）
+let orbitSensitivity = 0.3;
+sensRange.addEventListener('input', () => {
+  orbitSensitivity = parseFloat(sensRange.value);
+  sensVal.textContent = orbitSensitivity.toFixed(2);
+});
+
+// 地面网格 / 坐标轴：独立场景渲染（库的 render() 只画 splatMesh，
+// 且 splatMesh 无父级，挂父级不会被绘制）
+const helpersScene = new THREE.Scene();
+const grid = new THREE.GridHelper(20, 20, 0x444444, 0x2a2a2a);
+const axes = new THREE.AxesHelper(2);
+helpersScene.add(grid, axes);
+
+// 网格/坐标轴跟随取景中心与模型尺度，切换时同步
+function updateHelpers() {
+  helpersScene.position.copy(orbit.focal);
+  const s = Math.max(orbit.dist / 8, 0.01);
+  grid.scale.setScalar(s);
+  axes.scale.setScalar(Math.max(orbit.dist / 6, 0.01));
+}
+gridToggle.addEventListener('change', () => { grid.visible = gridToggle.checked; });
+axesToggle.addEventListener('change', () => { axes.visible = axesToggle.checked; });
 
 // ---- 打开文件 ----
 async function openFile(file) {
@@ -265,7 +304,16 @@ let loopErr = null;
     frames = 0;
     last = now;
   }
+  if (grid.visible || axes.visible) {
+    updateHelpers();
+    // 库 render() 结束后 autoClear 被恢复为 true，直接画会清掉泼溅画面；
+    // 强制不清屏，把辅助对象叠加在泼溅之上
+    const saved = renderer.autoClear;
+    renderer.autoClear = false;
+    try { renderer.render(helpersScene, camera); } catch (_) {}
+    renderer.autoClear = saved;
+  }
 })();
 
 // 调试钩子
-window.__sv = { get viewer() { return viewer; }, renderer, camera, orbit };
+window.__sv = { get viewer() { return viewer; }, renderer, camera, orbit, helpersScene };

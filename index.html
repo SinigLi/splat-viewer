@@ -24,6 +24,23 @@
     background: #2563eb; color: #fff; border: none; border-radius: 24px;
     padding: 12px 28px; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.45);
   }
+  #settingsBtn {
+    position: absolute; top: max(8px, env(safe-area-inset-top)); right: 8px;
+    width: 40px; height: 40px; border-radius: 50%; border: none;
+    background: rgba(0,0,0,.62); color: #fff; font-size: 20px; z-index: 30;
+  }
+  #settingsPanel {
+    position: absolute; top: max(56px, calc(env(safe-area-inset-top) + 48px)); right: 8px;
+    width: 240px; background: rgba(20,20,24,.94); border-radius: 14px;
+    padding: 14px; z-index: 30; display: none; color: #eee; font: 13px system-ui;
+    box-shadow: 0 6px 22px rgba(0,0,0,.5);
+  }
+  #settingsPanel.open { display: block; }
+  #settingsPanel .row { margin-bottom: 12px; }
+  #settingsPanel label { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  #settingsPanel input[type=range] { width: 100%; }
+  #settingsPanel .toggle { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+  #settingsPanel input[type=checkbox] { width: 18px; height: 18px; }
   #hint {
     position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px;
     align-items: center; justify-content: center; color: #888; z-index: 10;
@@ -34,6 +51,15 @@
 <body>
 <div id="app">
   <div id="hud"></div>
+  <button id="settingsBtn">⚙️</button>
+  <div id="settingsPanel">
+    <div class="row">
+      <label><span>旋转灵敏度</span><span id="sensVal">0.3</span></label>
+      <input id="sensRange" type="range" min="0.1" max="1.0" step="0.05" value="0.3">
+    </div>
+    <div class="toggle"><span>地面网格</span><input id="gridToggle" type="checkbox"></div>
+    <div class="toggle"><span>坐标轴</span><input id="axesToggle" type="checkbox"></div>
+  </div>
   <div id="hint">
     <div style="font-size:40px">🔮</div>
     <div>点击下方按钮选择 .ply / .splat / .ksplat 文件<br>全程本地处理，不联网</div>
