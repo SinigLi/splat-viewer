@@ -236,7 +236,6 @@ function saveSettings() {
 sensRange.addEventListener('change', saveSettings);
 gridToggle.addEventListener('change', saveSettings);
 axesToggle.addEventListener('change', saveSettings);
-loadSettings();
 
 // ---- 模型变换模式（参考 SuperSplat splats-transform-handler：
 // 用 TRS 变换作用到模型整体；查看器里等效为变换 splatMesh 本身，
