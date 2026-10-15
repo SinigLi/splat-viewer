@@ -44,7 +44,7 @@ const renderer = new THREE.WebGLRenderer({
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
 renderer.setSize(window.innerWidth, window.innerHeight);
 // canvas 挂在模型页内（项目列表页是独立 DOM）
-renderer.domElement.style.cssText = 'position:absolute; inset:0;';
+renderer.domElement.style.cssText = 'position:absolute; inset:0; touch-action:none;';
 document.getElementById('modelPage').appendChild(renderer.domElement);
 
 // ---- 自有相机 + SuperSplat 式球坐标 orbit 状态 ----
@@ -157,7 +157,7 @@ canvas.addEventListener('pointermove', (e) => {
       // 变换模式：捏合缩放模型，双指中点位移忽略（避免和移动混淆）
       if (pinch.len > 0 && s.len > 0) scaleMeshBy(s.len / pinch.len);
     } else {
-      panBy(s.midx - pinch.midx, s.midy - pinch.midy);
+      // 仅捏合缩放（老板拍板：双指拖平移移除，长按+方向盘覆盖）
       if (pinch.len > 0 && s.len > 0) zoomBy(pinch.len / s.len);
     }
     pinch = { ...s };
@@ -794,3 +794,9 @@ window.__sv = {
   get currentProjectName() { return currentProjectName; },
   get lastSavedSnapshot() { return lastSavedSnapshot; },
 };
+
+// 阶段0 spike：?spikeglb 时加载 GLB 同场景验证模块（独立 chunk，不进主包）
+if (new URLSearchParams(location.search).has('spikeglb')) {
+  import('./spike-glb.js').then((m) => { window.__spikeGLBReady = !!m.init(window.__sv); })
+    .catch((e) => { window.__spikeGLBErr = String(e); });
+}
