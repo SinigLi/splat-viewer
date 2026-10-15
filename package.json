@@ -5,6 +5,7 @@
   "description": "Mobile-first Gaussian Splat viewer wrapped as an Android APK (Capacitor)",
   "type": "module",
   "scripts": {
+    "test": "vitest run",
     "build:web": "vite build",
     "cap:sync": "cap sync android",
     "build:all": "vite build && cap sync android"
