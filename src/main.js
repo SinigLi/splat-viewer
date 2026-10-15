@@ -131,11 +131,20 @@ canvas.addEventListener('pointermove', (e) => {
   p.y = e.clientY;
 
   if (pointers.size === 1) {
-    orbitBy(dx, dy);
+    if (modelXform) {
+      moveMeshBy(dx, dy);
+    } else {
+      orbitBy(dx, dy);
+    }
   } else if (pointers.size === 2 && pinch.valid) {
     const s = pinchState();
-    panBy(s.midx - pinch.midx, s.midy - pinch.midy);
-    if (pinch.len > 0 && s.len > 0) zoomBy(pinch.len / s.len);
+    if (modelXform) {
+      // 变换模式：捏合缩放模型，双指中点位移忽略（避免和移动混淆）
+      if (pinch.len > 0 && s.len > 0) scaleMeshBy(s.len / pinch.len);
+    } else {
+      panBy(s.midx - pinch.midx, s.midy - pinch.midy);
+      if (pinch.len > 0 && s.len > 0) zoomBy(pinch.len / s.len);
+    }
     pinch = { ...s };
   }
 });
@@ -183,6 +192,8 @@ sensRange.addEventListener('input', () => {
 const helpersScene = new THREE.Scene();
 const grid = new THREE.GridHelper(20, 20, 0x444444, 0x2a2a2a);
 const axes = new THREE.AxesHelper(2);
+grid.visible = false;   // 与复选框初始态一致（默认关）
+axes.visible = false;
 helpersScene.add(grid, axes);
 
 // 网格/坐标轴跟随取景中心与模型尺度，切换时同步
@@ -194,6 +205,32 @@ function updateHelpers() {
 }
 gridToggle.addEventListener('change', () => { grid.visible = gridToggle.checked; });
 axesToggle.addEventListener('change', () => { axes.visible = axesToggle.checked; });
+
+// ---- 模型变换模式（参考 SuperSplat splats-transform-handler：
+// 用 TRS 变换作用到模型整体；查看器里等效为变换 splatMesh 本身，
+// 单指拖=屏幕平面移动模型，双指捏合=缩放模型）----
+const xformToggle = document.getElementById('xformToggle');
+let modelXform = false;
+xformToggle.addEventListener('change', () => { modelXform = xformToggle.checked; });
+
+function moveMeshBy(dx, dy) {
+  const mesh = viewer && viewer.splatMesh;
+  if (!mesh) return;
+  const worldPerPixel = (2 * orbit.dist * Math.tan((camera.fov * Math.PI) / 360)) / Math.max(window.innerHeight, 1);
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+  mesh.position.addScaledVector(right, dx * worldPerPixel);
+  mesh.position.addScaledVector(up, -dy * worldPerPixel);
+  mesh.updateMatrixWorld(true);
+}
+
+function scaleMeshBy(ratio) {
+  const mesh = viewer && viewer.splatMesh;
+  if (!mesh) return;
+  const s = Math.max(0.01, Math.min(100, mesh.scale.x * ratio));
+  mesh.scale.setScalar(s);
+  mesh.updateMatrixWorld(true);
+}
 
 // ---- 打开文件 ----
 async function openFile(file) {
@@ -229,6 +266,8 @@ async function openFile(file) {
     // rotation around Z"）——这是 SuperSplat 打开模型角度正确的处理
     if (mesh) {
       mesh.rotation.set(0, 0, Math.PI);
+      mesh.position.set(0, 0, 0);  // 重置上次的移动
+      mesh.scale.setScalar(1);      // 重置上次的缩放
       mesh.updateMatrixWorld(true);
     }
 
