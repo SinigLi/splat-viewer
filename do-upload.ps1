@@ -58,7 +58,7 @@ foreach ($f in $files) {
 $t = GH "Post" "$base/git/trees" "$tmp\tree_body.json"
 Write-Output "tree: $($t.sha)"
 
-[IO.File]::WriteAllText("$tmp\commit_body.json", '{"message":"Splat viewer: model transform mode, toggle default fix","tree":"' + $t.sha + '"}', (New-Object System.Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText("$tmp\commit_body.json", '{"message":"Project save/open (.svproj): state snapshot + settings persistence + Android share export","tree":"' + $t.sha + '"}', (New-Object System.Text.UTF8Encoding($false)))
 $c = GH "Post" "$base/git/commits" "$tmp\commit_body.json"
 Write-Output "commit: $($c.sha)"
 

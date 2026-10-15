@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
 import { Capacitor } from '@capacitor/core';
+import {
+  collectProject as collectProjectState,
+  parseProject, extractSettings, extractMeshTransform, extractCamera,
+  serializeSettings, parseSettings, SETTINGS_KEY,
+} from './project-state.js';
 
 const hud = document.getElementById('hud');
 const hint = document.getElementById('hint');
@@ -208,30 +213,26 @@ gridToggle.addEventListener('change', () => { grid.visible = gridToggle.checked;
 axesToggle.addEventListener('change', () => { axes.visible = axesToggle.checked; });
 
 // ---- 设置持久化（localStorage：轻量设置自动记忆）----
-const SETTINGS_KEY = 'sv-settings';
 function saveSettings() {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+    localStorage.setItem(SETTINGS_KEY, serializeSettings({
       sens: orbitSensitivity,
       grid: gridToggle.checked,
       axes: axesToggle.checked,
     }));
   } catch (_) {}
 }
-function loadSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return;
-    const s = JSON.parse(raw);
-    if (typeof s.sens === 'number') {
-      orbitSensitivity = s.sens;
-      sensRange.value = String(s.sens);
-      sensVal.textContent = s.sens.toFixed(2);
-    }
-    if (typeof s.grid === 'boolean') { gridToggle.checked = s.grid; grid.visible = s.grid; }
-    if (typeof s.axes === 'boolean') { axesToggle.checked = s.axes; axes.visible = s.axes; }
-  } catch (_) {}
-}
+(function loadSettings() {
+  const s = parseSettings(localStorage.getItem(SETTINGS_KEY));
+  if (!s) return;
+  if (typeof s.sens === 'number') {
+    orbitSensitivity = s.sens;
+    sensRange.value = String(s.sens);
+    sensVal.textContent = s.sens.toFixed(2);
+  }
+  if (typeof s.grid === 'boolean') { gridToggle.checked = s.grid; grid.visible = s.grid; }
+  if (typeof s.axes === 'boolean') { axesToggle.checked = s.axes; axes.visible = s.axes; }
+})();
 sensRange.addEventListener('change', saveSettings);
 gridToggle.addEventListener('change', saveSettings);
 axesToggle.addEventListener('change', saveSettings);
@@ -270,11 +271,8 @@ let currentModelName = null;
 
 function collectProject() {
   const mesh = viewer && viewer.splatMesh;
-  return {
-    version: 1,
-    app: 'splat-viewer',
-    savedAt: new Date().toISOString(),
-    model: { fileName: currentModelName },
+  return collectProjectState({
+    modelName: currentModelName,
     mesh: mesh ? {
       position: mesh.position.toArray(),
       scale: mesh.scale.x,
@@ -292,27 +290,26 @@ function collectProject() {
       axes: axesToggle.checked,
       xform: xformToggle.checked,
     },
-  };
+  });
 }
 
 function applyProject(p) {
-  if (!p || p.app !== 'splat-viewer') throw new Error('不是有效的工程文件');
-  // 设置
-  if (p.settings) {
-    if (typeof p.settings.sens === 'number') {
-      orbitSensitivity = p.settings.sens;
-      sensRange.value = String(p.settings.sens);
-      sensVal.textContent = p.settings.sens.toFixed(2);
-    }
-    if (typeof p.settings.grid === 'boolean') { gridToggle.checked = p.settings.grid; grid.visible = p.settings.grid; }
-    if (typeof p.settings.axes === 'boolean') { axesToggle.checked = p.settings.axes; axes.visible = p.settings.axes; }
-    if (typeof p.settings.xform === 'boolean') { xformToggle.checked = p.settings.xform; modelXform = p.settings.xform; }
-    saveSettings();
+  p = parseProject(p);
+  // 设置（立即应用）
+  const s = extractSettings(p);
+  if (typeof s.sens === 'number') {
+    orbitSensitivity = s.sens;
+    sensRange.value = String(s.sens);
+    sensVal.textContent = s.sens.toFixed(2);
   }
+  if (typeof s.grid === 'boolean') { gridToggle.checked = s.grid; grid.visible = s.grid; }
+  if (typeof s.axes === 'boolean') { axesToggle.checked = s.axes; axes.visible = s.axes; }
+  if (typeof s.xform === 'boolean') { xformToggle.checked = s.xform; modelXform = s.xform; }
+  saveSettings();
   // 模型变换（在模型加载后应用）
-  pendingMeshXform = p.mesh || null;
+  pendingMeshXform = extractMeshTransform(p);
   // 相机（focal/dist 直接恢复；若无相机状态，加载后自动取景会皂底）
-  pendingCamera = p.camera || null;
+  pendingCamera = extractCamera(p);
   return p.model && p.model.fileName ? p.model.fileName : null;
 }
 
@@ -381,7 +378,7 @@ projInput.addEventListener('change', async () => {
   projInput.value = '';
   if (!f) return;
   try {
-    const p = JSON.parse(await f.text());
+    const p = parseProject(await f.text());
     const modelName = applyProject(p);
     infoChip.textContent = '工程已读：请选择模型文件' + (modelName ? '「' + modelName + '」' : '');
     pendingProjName = modelName;
