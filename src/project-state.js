@@ -1,8 +1,13 @@
 // project-state.js - 工程状态快照的纯逻辑（无 DOM/网络依赖，可单元测试）
-// .svproj = { version, app, savedAt, model, mesh, camera, settings }
+// v1: 纯 json（仅状态，需重选模型）；v2: zip 包 = state.json + 模型原始字节
+// （自包含，打开一步到位还原上次状态）
+import { zipSync, unzipSync, strFromU8, strToU8 } from 'fflate';
 
 export const PROJECT_APP_ID = 'splat-viewer';
-export const PROJECT_VERSION = 1;
+export const PROJECT_VERSION = 1; // state.json 内部 schema 版本
+export const STATE_ENTRY = 'state.json';
+export const MODEL_ENTRY_RE = /^model\.(ply|splat|ksplat)$/;
+export const ZIP_MAGIC = [0x50, 0x4b]; // 'PK'
 export const SETTINGS_KEY = 'sv-settings'; // 保持与已发布版本一致，改动会丢用户已存设置
 
 /**
@@ -109,4 +114,56 @@ export function parseSettings(raw) {
   } catch {
     return null;
   }
+}
+
+/**
+ * 打包 v2 工程 zip（状态 + 模型字节自包含）
+ * @param {object} state collectProject 的输入
+ * @param {Uint8Array} modelBytes 模型文件原始字节
+ * @param {string} modelExt 模型扩展名（ply/splat/ksplat）
+ * @returns {Uint8Array} zip 字节
+ */
+export function buildProjectZip(state, modelBytes, modelExt) {
+  if (!(modelBytes instanceof Uint8Array) || modelBytes.length === 0) {
+    throw new Error('模型数据为空，无法保存工程');
+  }
+  if (!['ply', 'splat', 'ksplat'].includes(modelExt)) {
+    throw new Error('不支持的模型格式: ' + modelExt);
+  }
+  const snapshot = collectProject(state);
+  return zipSync({
+    [STATE_ENTRY]: strToU8(JSON.stringify(snapshot)),
+    ['model.' + modelExt]: modelBytes,
+  });
+}
+
+/**
+ * 解包工程文件：自动识别 v2 zip / v1 json（向后兼容）
+ * @param {Uint8Array|ArrayBuffer} bytes 文件原始字节
+ * @returns {{ kind: 'v2', state: object, modelBytes: Uint8Array, modelExt: string }
+ *          | { kind: 'v1', state: object }}
+ */
+export function parseProjectFile(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (u8.length < 2 || u8[0] !== ZIP_MAGIC[0] || u8[1] !== ZIP_MAGIC[1]) {
+    // v1 兼容：纯 JSON 文本
+    const text = strFromU8(u8);
+    return { kind: 'v1', state: parseProject(text) };
+  }
+  let files;
+  try {
+    files = unzipSync(u8);
+  } catch {
+    throw new Error('工程文件损坏（zip 解包失败）');
+  }
+  if (!files[STATE_ENTRY]) throw new Error('工程文件缺少 state.json');
+  const state = parseProject(strFromU8(files[STATE_ENTRY]));
+  const modelEntry = Object.keys(files).find((k) => MODEL_ENTRY_RE.test(k));
+  if (!modelEntry) throw new Error('工程文件缺少模型数据');
+  return {
+    kind: 'v2',
+    state,
+    modelBytes: files[modelEntry],
+    modelExt: modelEntry.split('.').pop(),
+  };
 }

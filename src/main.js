@@ -5,6 +5,7 @@ import {
   collectProject as collectProjectState,
   parseProject, extractSettings, extractMeshTransform, extractCamera,
   serializeSettings, parseSettings, SETTINGS_KEY,
+  buildProjectZip, parseProjectFile,
 } from './project-state.js';
 
 const hud = document.getElementById('hud');
@@ -267,6 +268,8 @@ function scaleMeshBy(ratio) {
 // SuperSplat 的工程在云端（账号体系）；我们是纯离线 App，采用本地
 // 状态文件方案：小 json 存状态，打开时重新载入对应模型文件。
 let currentModelName = null;
+let lastModelBytes = null;  // 当前模型的原始字节（保存工程用）
+let lastModelExt = null;
 
 function collectProject() {
   const mesh = viewer && viewer.splatMesh;
@@ -339,34 +342,57 @@ const openProjBtn = document.getElementById('openProjBtn');
 const projInput = document.getElementById('projInput');
 
 saveBtn.addEventListener('click', async () => {
-  if (!currentModelName) { infoChip.textContent = '先加载模型再保存工程'; return; }
-  const data = JSON.stringify(collectProject(), null, 2);
+  if (!currentModelName || !lastModelBytes) { infoChip.textContent = '先加载模型再保存工程'; return; }
   const base = currentModelName.replace(/\.[^.]+$/, '');
   const fname = base + '.svproj';
+  infoChip.textContent = '正在打包工程…';
   try {
+    // v2：zip 包 = state.json + 模型字节（自包含，打开一步还原）
+    const projBytes = buildProjectZip({
+      modelName: currentModelName,
+      mesh: (() => {
+        const mesh = viewer && viewer.splatMesh;
+        return mesh ? {
+          position: mesh.position.toArray(),
+          scale: mesh.scale.x,
+          rotationZ: mesh.rotation.z,
+        } : null;
+      })(),
+      camera: {
+        azim: orbit.azim,
+        elev: orbit.elev,
+        dist: orbit.dist,
+        focal: orbit.focal.toArray(),
+      },
+      settings: {
+        sens: orbitSensitivity,
+        grid: gridToggle.checked,
+        axes: axesToggle.checked,
+        xform: xformToggle.checked,
+      },
+    }, lastModelBytes, lastModelExt);
+
     if (Capacitor.isNativePlatform()) {
       // 安卓：写缓存后走系统分享面板（用户可选存到文件管理器/发送任意 App）
-      // —— Directory.Documents 在 Android 10+ 被系统拒绝，Share 是标准替代
       const { Filesystem, Directory } = await import('@capacitor/filesystem');
       const { Share } = await import('@capacitor/share');
       const w = await Filesystem.writeFile({
         path: fname,
-        data,
+        data: projBytes,   // 二进制 zip，不设 encoding
         directory: Directory.Cache,
-        encoding: 'utf8',
       });
       await Share.share({ title: fname, url: w.uri });
-      infoChip.textContent = '工程已通过系统分享导出: ' + fname;
+      infoChip.textContent = '工程已通过系统分享导出: ' + fname + ' (' + fmtBytes(projBytes.length) + ')';
     } else {
-      // 浏览器：下载
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+      a.href = URL.createObjectURL(new Blob([projBytes], { type: 'application/zip' }));
       a.download = fname;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-      infoChip.textContent = '工程已下载: ' + fname;
+      infoChip.textContent = '工程已下载: ' + fname + ' (' + fmtBytes(projBytes.length) + ')';
     }
   } catch (err) {
+    console.error(err);
     infoChip.textContent = '保存失败: ' + (err && err.message ? err.message : '未知错误');
   }
 });
@@ -377,32 +403,41 @@ projInput.addEventListener('change', async () => {
   projInput.value = '';
   if (!f) return;
   try {
-    const p = parseProject(await f.text());
-    const modelName = applyProject(p);
-    infoChip.textContent = '工程已读：请选择模型文件' + (modelName ? '「' + modelName + '」' : '');
+    infoChip.textContent = '正在读取工程…';
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const proj = parseProjectFile(bytes);
+    if (proj.kind === 'v2') {
+      // 自包含工程：状态 + 模型一次到位
+      applyProject(proj.state);
+      infoChip.textContent = '工程已读（含模型），加载中…';
+      await loadModelBytes(proj.modelBytes, proj.state.model.fileName || 'model.' + proj.modelExt, proj.modelExt);
+      return;
+    }
+    // v1 旧格式：只有状态，需重选模型
+    const modelName = applyProject(proj.state);
+    infoChip.textContent = '旧版工程：请选择模型文件' + (modelName ? '「' + modelName + '」' : '');
     pendingProjName = modelName;
-    fileInput.click();  // 直接弹文件选择器选模型
+    fileInput.click();
   } catch (err) {
+    console.error(err);
     infoChip.textContent = '打开工程失败: ' + (err && err.message ? err.message : '无效文件');
   }
 });
 let pendingProjName = null;
 
 // ---- 打开文件 ----
-async function openFile(file) {
-  const ext = (file.name.split('.').pop() || '').toLowerCase();
-  if (!['ply', 'splat', 'ksplat'].includes(ext)) {
-    infoChip.textContent = '不支持的格式: .' + ext;
-    return;
-  }
+// 字节加载核心：文件打开与工程内嵌模型共用
+async function loadModelBytes(bytes, fileName, ext) {
   hint.style.display = 'none';
-  infoChip.textContent = '解析中: ' + file.name + ' (' + fmtBytes(file.size) + ')';
+  infoChip.textContent = '解析中: ' + fileName + ' (' + fmtBytes(bytes.length) + ')';
 
   try {
     if (viewer) { try { await viewer.dispose(); } catch (_) {} }
     viewer = createViewer();
 
-    const buf = await file.arrayBuffer();
+    lastModelBytes = bytes;
+    lastModelExt = ext;
+    const buf = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
     const blobUrl = URL.createObjectURL(new Blob([buf]));
     const format = ext === 'ply'
       ? GaussianSplats3D.SceneFormat.Ply
@@ -416,7 +451,7 @@ async function openFile(file) {
 
     const mesh = viewer.splatMesh;
     const count = mesh && typeof mesh.getSplatCount === 'function' ? mesh.getSplatCount() : 0;
-    currentModelName = file.name;
+    currentModelName = fileName;
 
     // SuperSplat 的 PLY 加载约定：绕 Z 轴转 180°（splat-transform
     // src/lib/utils/math.ts: "PLY coordinate convention: 180-degree
@@ -460,8 +495,8 @@ async function openFile(file) {
     // 工程状态恢复（若从「打开工程」进来）：变换 + 相机覆盖自动取景
     restorePending();
 
-    infoChip.textContent = file.name + ' — ' + count.toLocaleString() + ' splats, ' + fmtBytes(file.size);
-    if (pendingProjName && file.name !== pendingProjName) {
+    infoChip.textContent = fileName + ' — ' + count.toLocaleString() + ' splats, ' + fmtBytes(bytes.length);
+    if (pendingProjName && fileName !== pendingProjName) {
       infoChip.textContent += '（注意：与工程记录的「' + pendingProjName + '」不同名）';
     }
     pendingProjName = null;
@@ -470,6 +505,16 @@ async function openFile(file) {
     console.error(err);
     infoChip.textContent = '加载失败: ' + (err && err.message ? err.message : '未知错误');
   }
+}
+
+async function openFile(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  if (!['ply', 'splat', 'ksplat'].includes(ext)) {
+    infoChip.textContent = '不支持的格式: .' + ext;
+    return;
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  await loadModelBytes(bytes, file.name, ext);
 }
 
 openBtn.addEventListener('click', () => fileInput.click());
