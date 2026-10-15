@@ -191,11 +191,8 @@ canvas.addEventListener('pointerup', (e) => glog('pu', { id: e.pointerId }));
 canvas.addEventListener('pointercancel', (e) => glog('pc', { id: e.pointerId }));
 window.visualViewport && visualViewport.addEventListener('resize', () => glog('vvresize', { scale: +visualViewport.scale.toFixed(3), w: window.innerWidth, h: window.innerHeight }));
 
-// 📤 导出日志：悬浮按钮，点开全屏日志面板（textarea 长按全选复制，不依赖剪贴板）
-const glogBtn = document.createElement('button');
-glogBtn.id = 'glogBtn';
-glogBtn.textContent = '📤';
-glogBtn.style.cssText = 'position:absolute; top:max(calc(env(safe-area-inset-top)+144px),152px); left:8px; width:40px; height:40px; border-radius:50%; border:none; background:rgba(0,0,0,.62); color:#fff; font-size:17px; z-index:60;';
+// 📤 导出日志：按钮在 index.html（与能点的⚙️💾同款写法），点开全屏日志面板
+const glogBtn = document.getElementById('glogBtn');
 const glogPanel = document.createElement('div');
 glogPanel.style.cssText = 'position:absolute; inset:0; background:rgba(0,0,0,.92); z-index:100; display:none; flex-direction:column; padding:12px; padding-top:max(calc(env(safe-area-inset-top)+12px),16px);';
 const glogClose = document.createElement('button');
@@ -207,7 +204,7 @@ glogTip.style.cssText = 'color:#8cf; font-size:13px; margin:8px 0;';
 const glogTA = document.createElement('textarea');
 glogTA.style.cssText = 'flex:1; width:100%; background:#111; color:#9f9; border:1px solid #333; border-radius:8px; font:11px monospace; white-space:pre;';
 glogPanel.appendChild(glogClose); glogPanel.appendChild(glogTip); glogPanel.appendChild(glogTA);
-modelPage.appendChild(glogBtn); modelPage.appendChild(glogPanel);
+modelPage.appendChild(glogPanel);
 // 用 pointerup 触发（WebView click 可能被吞），并挡掉画布手势
 for (const evt of ['pointerdown', 'pointerup', 'click']) {
   glogBtn.addEventListener(evt, (e) => e.stopPropagation());

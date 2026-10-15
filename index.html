@@ -98,6 +98,12 @@
     width: 40px; height: 40px; border-radius: 50%; border: none;
     background: rgba(0,0,0,.62); color: #fff; font-size: 17px; z-index: 30;
   }
+  #glogBtn {
+    position: absolute; top: max(calc(env(safe-area-inset-top) + 144px), 152px); left: 8px;
+    width: 40px; height: 40px; border-radius: 50%; border: none;
+    background: rgba(0,0,0,.62); color: #fff; font-size: 17px; z-index: 30;
+    pointer-events: auto;
+  }
   /* 诊断导航器：右下角 2x4 按钮盘 */
   #navPad {
     position: absolute; right: 10px; bottom: max(calc(env(safe-area-inset-bottom) + 12px), 16px);
@@ -169,6 +175,7 @@
     <button id="backBtn">←</button>
     <button id="settingsBtn">⚙️</button>
     <button id="saveProjBtn">💾</button>
+    <button id="glogBtn" style="top:max(calc(env(safe-area-inset-top) + 144px), 152px)">📤</button>
     <!-- 诊断导航器：按钮直接驱动相机状态，验证手势问题 vs 渲染问题 -->
     <div id="navPad">
       <button data-nav="zin">➕</button>
