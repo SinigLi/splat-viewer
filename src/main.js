@@ -36,9 +36,11 @@ function createViewer() {
     sharedMemoryForWorkers: false,
     sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
     dynamicScene: false,
+    // 相机由库在 init() 时创建；只能通过官方参数设定初始位姿，
+    // 不能在构造后直接碰 v.camera（此时还是 undefined，会崩整个模块）
+    initialCameraPosition: [0, 0, 4],
+    initialCameraLookAt: [0, 0, 0],
   });
-  v.camera.position.set(0, 0, 4);
-  v.camera.lookAt(0, 0, 0);
   return v;
 }
 viewer = createViewer();
@@ -75,7 +77,38 @@ async function openFile(file) {
       splatAlphaRemovalThreshold: 0,
     });
 
-    const count = viewer.getSplatCount();
+    // Viewer 自身没有 getSplatCount()（运行时已验证），数量在 splatMesh 上
+    const mesh = viewer.splatMesh;
+    const count = mesh && typeof mesh.getSplatCount === 'function' ? mesh.getSplatCount() : 0;
+
+    // 自动取景：Brush/COLMAP 导出的坐标原点常在模型体外，
+    // 必须按点云包围球定位相机并对准中心，否则黑屏
+    if (mesh && typeof mesh.getSplatCenter === 'function' && count > 0) {
+      const V3 = viewer.camera.position.constructor;
+      const tmp = new V3();
+      const step = Math.max(1, Math.floor(count / 2000));
+      const acc = new V3();
+      let cnt = 0;
+      for (let i = 0; i < count; i += step) { mesh.getSplatCenter(i, tmp); acc.add(tmp); cnt++; }
+      const center = acc.multiplyScalar(1 / cnt);
+      let radius = 0;
+      for (let i = 0; i < count; i += step) {
+        mesh.getSplatCenter(i, tmp);
+        const d = tmp.distanceTo(center);
+        if (d > radius) radius = d;
+      }
+      if (!isFinite(radius) || radius <= 0) radius = 5;
+      const cam = viewer.camera;
+      const fovRad = ((cam.fov || 60) * Math.PI) / 180;
+      const dist = Math.max((radius * 2.2) / Math.tan(fovRad / 2), radius + 0.5);
+      cam.near = Math.max(0.01, radius * 0.01);
+      cam.far = Math.max(500, dist + radius * 10);
+      cam.position.set(center.x, center.y, center.z + dist);
+      cam.lookAt(center);
+      cam.updateProjectionMatrix();
+      if (viewer.controls) { try { viewer.controls.target.copy(center); viewer.controls.update(); } catch (_) {} }
+    }
+
     infoChip.textContent = file.name + ' — ' + count.toLocaleString() + ' splats, ' + fmtBytes(file.size);
     URL.revokeObjectURL(blobUrl);
   } catch (err) {
@@ -91,6 +124,9 @@ fileInput.addEventListener('change', () => {
   fileInput.value = '';
 });
 
+// 调试钩子（无头诊断用，不影响正常使用）
+window.__sv = { get viewer() { return viewer; }, renderer };
+
 // ---- 横竖屏切换/窗口尺寸变化：同步渲染器与相机 ----
 function handleResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -102,11 +138,18 @@ function handleResize() {
 window.addEventListener('resize', handleResize);
 window.addEventListener('orientationchange', () => setTimeout(handleResize, 300));
 
-// ---- 主循环：viewer.update() 同时驱动空场景与已加载场景 ----
+// ---- 主循环：selfDrivenMode=false 时必须同时调 update() 和 render()，
+// 库不会自动渲染（render 不走 threeScene，直接渲染 splatMesh）----
 let frames = 0, last = performance.now();
+let loopErr = null;
 (function loop() {
   requestAnimationFrame(loop);
-  try { viewer.update(); } catch (_) {}
+  try {
+    viewer.update();
+    viewer.render();
+  } catch (e) {
+    if (!loopErr) { loopErr = e; console.error('loop error:', e); window.__svLoopError = e.message; }
+  }
   frames++;
   const now = performance.now();
   if (now - last >= 1000) {
