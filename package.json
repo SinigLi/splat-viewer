@@ -10,6 +10,8 @@
     "build:all": "vite build && cap sync android"
   },
   "dependencies": {
+    "@capacitor/filesystem": "^7.1.9",
+    "@capacitor/share": "^7.0.4",
     "@mkkellogg/gaussian-splats-3d": "^0.4.7",
     "three": "^0.180.0"
   },

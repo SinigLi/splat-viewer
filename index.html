@@ -17,12 +17,16 @@
     padding: 3px 10px; border-radius: 999px; white-space: nowrap;
   }
   #toolbar {
-    position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 0; right: 0;
-    display: flex; justify-content: center; gap: 12px; z-index: 20;
+    position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 8px; right: 8px;
+    display: flex; justify-content: center; gap: 8px; z-index: 20; flex-wrap: wrap;
   }
   #openBtn {
     background: #2563eb; color: #fff; border: none; border-radius: 24px;
-    padding: 12px 28px; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.45);
+    padding: 12px 24px; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.45);
+  }
+  .ghost {
+    background: rgba(0,0,0,.62); color: #ddd; border: 1px solid #444; border-radius: 24px;
+    padding: 12px 16px; font-size: 13px;
   }
   #settingsBtn {
     position: absolute; top: max(8px, env(safe-area-inset-top)); right: 8px;
@@ -68,8 +72,11 @@
   </div>
   <div id="toolbar">
     <button id="openBtn">📂 打开模型</button>
+    <button id="openProjBtn" class="ghost">📁 打开工程</button>
+    <button id="saveBtn" class="ghost">💾 保存工程</button>
   </div>
   <input id="fileInput" type="file" accept=".ply,.splat,.ksplat" style="display:none">
+  <input id="projInput" type="file" style="display:none">
 </div>
 <script type="module" src="/src/main.js"></script>
 </body>

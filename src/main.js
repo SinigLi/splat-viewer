@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as GaussianSplats3D from '@mkkellogg/gaussian-splats-3d';
+import { Capacitor } from '@capacitor/core';
 
 const hud = document.getElementById('hud');
 const hint = document.getElementById('hint');
@@ -206,6 +207,36 @@ function updateHelpers() {
 gridToggle.addEventListener('change', () => { grid.visible = gridToggle.checked; });
 axesToggle.addEventListener('change', () => { axes.visible = axesToggle.checked; });
 
+// ---- 设置持久化（localStorage：轻量设置自动记忆）----
+const SETTINGS_KEY = 'sv-settings';
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      sens: orbitSensitivity,
+      grid: gridToggle.checked,
+      axes: axesToggle.checked,
+    }));
+  } catch (_) {}
+}
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (typeof s.sens === 'number') {
+      orbitSensitivity = s.sens;
+      sensRange.value = String(s.sens);
+      sensVal.textContent = s.sens.toFixed(2);
+    }
+    if (typeof s.grid === 'boolean') { gridToggle.checked = s.grid; grid.visible = s.grid; }
+    if (typeof s.axes === 'boolean') { axesToggle.checked = s.axes; axes.visible = s.axes; }
+  } catch (_) {}
+}
+sensRange.addEventListener('change', saveSettings);
+gridToggle.addEventListener('change', saveSettings);
+axesToggle.addEventListener('change', saveSettings);
+loadSettings();
+
 // ---- 模型变换模式（参考 SuperSplat splats-transform-handler：
 // 用 TRS 变换作用到模型整体；查看器里等效为变换 splatMesh 本身，
 // 单指拖=屏幕平面移动模型，双指捏合=缩放模型）----
@@ -231,6 +262,135 @@ function scaleMeshBy(ratio) {
   mesh.scale.setScalar(s);
   mesh.updateMatrixWorld(true);
 }
+
+// ---- 工程（.svproj）：状态快照 = 模型变换 + 相机 + 设置 ----
+// SuperSplat 的工程在云端（账号体系）；我们是纯离线 App，采用本地
+// 状态文件方案：小 json 存状态，打开时重新载入对应模型文件。
+let currentModelName = null;
+
+function collectProject() {
+  const mesh = viewer && viewer.splatMesh;
+  return {
+    version: 1,
+    app: 'splat-viewer',
+    savedAt: new Date().toISOString(),
+    model: { fileName: currentModelName },
+    mesh: mesh ? {
+      position: mesh.position.toArray(),
+      scale: mesh.scale.x,
+      rotationZ: mesh.rotation.z,
+    } : null,
+    camera: {
+      azim: orbit.azim,
+      elev: orbit.elev,
+      dist: orbit.dist,
+      focal: orbit.focal.toArray(),
+    },
+    settings: {
+      sens: orbitSensitivity,
+      grid: gridToggle.checked,
+      axes: axesToggle.checked,
+      xform: xformToggle.checked,
+    },
+  };
+}
+
+function applyProject(p) {
+  if (!p || p.app !== 'splat-viewer') throw new Error('不是有效的工程文件');
+  // 设置
+  if (p.settings) {
+    if (typeof p.settings.sens === 'number') {
+      orbitSensitivity = p.settings.sens;
+      sensRange.value = String(p.settings.sens);
+      sensVal.textContent = p.settings.sens.toFixed(2);
+    }
+    if (typeof p.settings.grid === 'boolean') { gridToggle.checked = p.settings.grid; grid.visible = p.settings.grid; }
+    if (typeof p.settings.axes === 'boolean') { axesToggle.checked = p.settings.axes; axes.visible = p.settings.axes; }
+    if (typeof p.settings.xform === 'boolean') { xformToggle.checked = p.settings.xform; modelXform = p.settings.xform; }
+    saveSettings();
+  }
+  // 模型变换（在模型加载后应用）
+  pendingMeshXform = p.mesh || null;
+  // 相机（focal/dist 直接恢复；若无相机状态，加载后自动取景会皂底）
+  pendingCamera = p.camera || null;
+  return p.model && p.model.fileName ? p.model.fileName : null;
+}
+
+let pendingMeshXform = null;
+let pendingCamera = null;
+
+function restorePending() {
+  const mesh = viewer && viewer.splatMesh;
+  if (mesh && pendingMeshXform) {
+    const m = pendingMeshXform;
+    if (Array.isArray(m.position)) mesh.position.fromArray(m.position);
+    if (typeof m.scale === 'number') mesh.scale.setScalar(m.scale);
+    if (typeof m.rotationZ === 'number') mesh.rotation.z = m.rotationZ;
+    mesh.updateMatrixWorld(true);
+  }
+  if (pendingCamera) {
+    const c = pendingCamera;
+    orbit.azim = c.azim; orbit.elev = c.elev; orbit.dist = c.dist;
+    orbit.focal.fromArray(c.focal);
+    applyCamera();
+  }
+  pendingMeshXform = null;
+  pendingCamera = null;
+}
+
+const saveBtn = document.getElementById('saveBtn');
+const openProjBtn = document.getElementById('openProjBtn');
+const projInput = document.getElementById('projInput');
+
+saveBtn.addEventListener('click', async () => {
+  if (!currentModelName) { infoChip.textContent = '先加载模型再保存工程'; return; }
+  const data = JSON.stringify(collectProject(), null, 2);
+  const base = currentModelName.replace(/\.[^.]+$/, '');
+  const fname = base + '.svproj';
+  try {
+    if (Capacitor.isNativePlatform()) {
+      // 安卓：写缓存后走系统分享面板（用户可选存到文件管理器/发送任意 App）
+      // —— Directory.Documents 在 Android 10+ 被系统拒绝，Share 是标准替代
+      const { Filesystem, Directory } = await import('@capacitor/filesystem');
+      const { Share } = await import('@capacitor/share');
+      const w = await Filesystem.writeFile({
+        path: fname,
+        data,
+        directory: Directory.Cache,
+        encoding: 'utf8',
+      });
+      await Share.share({ title: fname, url: w.uri });
+      infoChip.textContent = '工程已通过系统分享导出: ' + fname;
+    } else {
+      // 浏览器：下载
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+      a.download = fname;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      infoChip.textContent = '工程已下载: ' + fname;
+    }
+  } catch (err) {
+    infoChip.textContent = '保存失败: ' + (err && err.message ? err.message : '未知错误');
+  }
+});
+
+openProjBtn.addEventListener('click', () => projInput.click());
+projInput.addEventListener('change', async () => {
+  const f = projInput.files && projInput.files[0];
+  projInput.value = '';
+  if (!f) return;
+  try {
+    const p = JSON.parse(await f.text());
+    const modelName = applyProject(p);
+    infoChip.textContent = '工程已读：请选择模型文件' + (modelName ? '「' + modelName + '」' : '');
+    pendingProjName = modelName;
+    fileInput.click();  // 直接弹文件选择器选模型
+  } catch (err) {
+    infoChip.textContent = '打开工程失败: ' + (err && err.message ? err.message : '无效文件');
+  }
+});
+let pendingProjName = null;
 
 // ---- 打开文件 ----
 async function openFile(file) {
@@ -260,6 +420,7 @@ async function openFile(file) {
 
     const mesh = viewer.splatMesh;
     const count = mesh && typeof mesh.getSplatCount === 'function' ? mesh.getSplatCount() : 0;
+    currentModelName = file.name;
 
     // SuperSplat 的 PLY 加载约定：绕 Z 轴转 180°（splat-transform
     // src/lib/utils/math.ts: "PLY coordinate convention: 180-degree
@@ -300,7 +461,14 @@ async function openFile(file) {
       applyCamera();
     }
 
+    // 工程状态恢复（若从「打开工程」进来）：变换 + 相机覆盖自动取景
+    restorePending();
+
     infoChip.textContent = file.name + ' — ' + count.toLocaleString() + ' splats, ' + fmtBytes(file.size);
+    if (pendingProjName && file.name !== pendingProjName) {
+      infoChip.textContent += '（注意：与工程记录的「' + pendingProjName + '」不同名）';
+    }
+    pendingProjName = null;
     URL.revokeObjectURL(blobUrl);
   } catch (err) {
     console.error(err);
@@ -355,4 +523,4 @@ let loopErr = null;
 })();
 
 // 调试钩子
-window.__sv = { get viewer() { return viewer; }, renderer, camera, orbit, helpersScene };
+window.__sv = { get viewer() { return viewer; }, renderer, camera, orbit, helpersScene, collectProject };
