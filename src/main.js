@@ -169,6 +169,51 @@ function endPointer(e) {
 canvas.addEventListener('pointerup', endPointer);
 canvas.addEventListener('pointercancel', endPointer); // SuperSplat 踩坑注释：漏了 cancel 会导致后续手势误判
 
+// ---- 手势诊断日志（真机排查用：📤 导出发给开发） ----
+const gestureLog = [];
+function glog(kind, data = {}) {
+  gestureLog.push({
+    t: +(performance.now() / 1000).toFixed(2), kind, ...data,
+    st: {
+      d: +orbit.dist.toFixed(2), az: +orbit.azim.toFixed(3), el: +orbit.elev.toFixed(3),
+      fx: +orbit.focal.x.toFixed(2), fy: +orbit.focal.y.toFixed(2), fz: +orbit.focal.z.toFixed(2),
+      np: pointers.size, pin: pinch.valid,
+      vvScale: +(window.visualViewport ? window.visualViewport.scale : 0).toFixed(3),
+    },
+  });
+  if (gestureLog.length > 600) gestureLog.shift();
+}
+glog('boot', { ua: navigator.userAgent.slice(0, 80), dpr: window.devicePixelRatio,
+  w: window.innerWidth, h: window.innerHeight, ta: getComputedStyle(canvas).touchAction });
+canvas.addEventListener('pointerdown', (e) => glog('pd', { id: e.pointerId, x: +e.clientX.toFixed(1), y: +e.clientY.toFixed(1), pt: e.pointerType, btn: e.button }));
+canvas.addEventListener('pointermove', (e) => glog('pm', { id: e.pointerId, x: +e.clientX.toFixed(1), y: +e.clientY.toFixed(1) }));
+canvas.addEventListener('pointerup', (e) => glog('pu', { id: e.pointerId }));
+canvas.addEventListener('pointercancel', (e) => glog('pc', { id: e.pointerId }));
+window.visualViewport && visualViewport.addEventListener('resize', () => glog('vvresize', { scale: +visualViewport.scale.toFixed(3), w: window.innerWidth, h: window.innerHeight }));
+
+// 📤 导出日志：悬浮按钮，点击后复制到剪贴板并提示（发送给开发定位）
+const glogBtn = document.createElement('button');
+glogBtn.id = 'glogBtn';
+glogBtn.textContent = '📤';
+glogBtn.style.cssText = 'position:absolute; top:max(calc(env(safe-area-inset-top)+144px),152px); left:8px; width:40px; height:40px; border-radius:50%; border:none; background:rgba(0,0,0,.62); color:#fff; font-size:17px; z-index:30;';
+glogBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+glogBtn.addEventListener('click', async () => {
+  const text = gestureLog.map((l) => JSON.stringify(l)).join('\n');
+  try { await navigator.clipboard.writeText(text); infoChip.textContent = '日志已复制(' + gestureLog.length + '条)，粘贴发给开发'; }
+  catch (_) {
+    // 剪贴板失败兑底：弹文本层手动全选复制
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); infoChip.textContent = '日志已复制(' + gestureLog.length + '条)'; }
+    catch (_e) { infoChip.textContent = '复制失败，日志在 window.__svGlog()'; }
+    ta.remove();
+  }
+  glog('log_exported');
+});
+modelPage.appendChild(glogBtn);
+window.__svGlog = () => gestureLog.slice();
+glog('glog_ready');
+
 canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   zoomBy(Math.exp(e.deltaY * 0.0012));
