@@ -34,7 +34,6 @@ function createViewer() {
     selfDrivenMode: false,
     useBuiltInControls: true,
     sharedMemoryForWorkers: false,
-    renderMode: GaussianSplats3D.RenderMode.OnBeforeRender,
     sceneRevealMode: GaussianSplats3D.SceneRevealMode.Instant,
     dynamicScene: false,
   });
@@ -60,8 +59,8 @@ async function openFile(file) {
   infoChip.textContent = '解析中: ' + file.name + ' (' + fmtBytes(file.size) + ')';
 
   try {
-    // 销毁旧场景，保留同一个 renderer 重建 viewer
-    if (viewer) { try { viewer.dispose(); } catch (_) {} }
+    // 销毁旧场景（外部传入的 renderer 不会被库销毁），再重建 viewer
+    if (viewer) { try { await viewer.dispose(); } catch (_) {} }
     viewer = createViewer();
 
     const buf = await file.arrayBuffer();
@@ -76,7 +75,7 @@ async function openFile(file) {
       splatAlphaRemovalThreshold: 0,
     });
 
-    const count = viewer.splatCount;
+    const count = viewer.getSplatCount();
     infoChip.textContent = file.name + ' — ' + count.toLocaleString() + ' splats, ' + fmtBytes(file.size);
     URL.revokeObjectURL(blobUrl);
   } catch (err) {
