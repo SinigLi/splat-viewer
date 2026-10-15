@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Splat Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #111; touch-action: none; }
+  #app { width: 100%; height: 100%; position: relative; }
+  #hud {
+    position: absolute; top: max(8px, env(safe-area-inset-top)); left: 8px; right: 8px;
+    display: flex; gap: 6px; flex-wrap: wrap; z-index: 20; pointer-events: none;
+  }
+  .chip {
+    background: rgba(0,0,0,.62); color: #fff; font: 12px/1.6 system-ui, sans-serif;
+    padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  #toolbar {
+    position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 0; right: 0;
+    display: flex; justify-content: center; gap: 12px; z-index: 20;
+  }
+  #openBtn {
+    background: #2563eb; color: #fff; border: none; border-radius: 24px;
+    padding: 12px 28px; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.45);
+  }
+  #hint {
+    position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px;
+    align-items: center; justify-content: center; color: #888; z-index: 10;
+    font: 14px system-ui; text-align: center; padding: 0 32px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud"></div>
+  <div id="hint">
+    <div style="font-size:40px">🔮</div>
+    <div>点击下方按钮选择 .ply / .splat / .ksplat 文件<br>全程本地处理，不联网</div>
+  </div>
+  <div id="toolbar">
+    <button id="openBtn">📂 打开模型</button>
+  </div>
+  <input id="fileInput" type="file" accept=".ply,.splat,.ksplat" style="display:none">
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Splat Viewer</string>
+    <string name="title_activity_main">Splat Viewer</string>
+    <string name="package_name">com.sinigli.splatviewer</string>
+    <string name="custom_url_scheme">com.sinigli.splatviewer</string>
+</resources>

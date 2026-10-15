@@ -1,0 +1,11 @@
+{
+  "appId": "com.sinigli.splatviewer",
+  "appName": "Splat Viewer",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
