@@ -747,6 +747,36 @@ fileInput.addEventListener('change', () => {
   fileInput.value = '';
 });
 
+// ---- 诊断导航器：按钮直接驱动相机状态 ----
+// 目的：区分「手势层问题」与「内核渲染问题」——按钮生效=手势问题；按钮也无效=渲染问题
+const navPad = document.getElementById('navPad');
+if (navPad) {
+  const navActions = {
+    zin: () => zoomBy(0.82),            // 拉近
+    zout: () => zoomBy(1.22),           // 拉远
+    up: () => panBy(0, -40),            // 视口上移
+    down: () => panBy(0, 40),
+    left: () => panBy(-40, 0),
+    right: () => panBy(40, 0),
+    rotL: () => orbitBy(-30, 0),        // 绕焦点旋转
+    rotR: () => orbitBy(30, 0),
+  };
+  let navTimer = null;
+  navPad.addEventListener('pointerdown', (e) => {
+    const btn = e.target.closest('button[data-nav]');
+    if (!btn) return;
+    e.stopPropagation();
+    const act = navActions[btn.dataset.nav];
+    if (!act) return;
+    act();
+    navTimer = setInterval(act, 160);   // 长按连发
+  });
+  const stopNav = () => { if (navTimer) { clearInterval(navTimer); navTimer = null; } };
+  navPad.addEventListener('pointerup', stopNav);
+  navPad.addEventListener('pointercancel', stopNav);
+  navPad.addEventListener('pointerleave', stopNav);
+}
+
 // ---- 窗口尺寸变化 ----
 function handleResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -791,6 +821,7 @@ let loopErr = null;
 // 调试钩子
 window.__sv = {
   get viewer() { return viewer; }, renderer, camera, orbit, helpersScene, collectProject,
+  applyCamera, zoomBy, panBy, orbitBy,
   get currentProjectName() { return currentProjectName; },
   get lastSavedSnapshot() { return lastSavedSnapshot; },
 };
