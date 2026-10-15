@@ -191,26 +191,37 @@ canvas.addEventListener('pointerup', (e) => glog('pu', { id: e.pointerId }));
 canvas.addEventListener('pointercancel', (e) => glog('pc', { id: e.pointerId }));
 window.visualViewport && visualViewport.addEventListener('resize', () => glog('vvresize', { scale: +visualViewport.scale.toFixed(3), w: window.innerWidth, h: window.innerHeight }));
 
-// 📤 导出日志：悬浮按钮，点击后复制到剪贴板并提示（发送给开发定位）
+// 📤 导出日志：悬浮按钮，点开全屏日志面板（textarea 长按全选复制，不依赖剪贴板）
 const glogBtn = document.createElement('button');
 glogBtn.id = 'glogBtn';
 glogBtn.textContent = '📤';
-glogBtn.style.cssText = 'position:absolute; top:max(calc(env(safe-area-inset-top)+144px),152px); left:8px; width:40px; height:40px; border-radius:50%; border:none; background:rgba(0,0,0,.62); color:#fff; font-size:17px; z-index:30;';
-glogBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-glogBtn.addEventListener('click', async () => {
-  const text = gestureLog.map((l) => JSON.stringify(l)).join('\n');
-  try { await navigator.clipboard.writeText(text); infoChip.textContent = '日志已复制(' + gestureLog.length + '条)，粘贴发给开发'; }
-  catch (_) {
-    // 剪贴板失败兑底：弹文本层手动全选复制
-    const ta = document.createElement('textarea');
-    ta.value = text; document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); infoChip.textContent = '日志已复制(' + gestureLog.length + '条)'; }
-    catch (_e) { infoChip.textContent = '复制失败，日志在 window.__svGlog()'; }
-    ta.remove();
-  }
-  glog('log_exported');
+glogBtn.style.cssText = 'position:absolute; top:max(calc(env(safe-area-inset-top)+144px),152px); left:8px; width:40px; height:40px; border-radius:50%; border:none; background:rgba(0,0,0,.62); color:#fff; font-size:17px; z-index:60;';
+const glogPanel = document.createElement('div');
+glogPanel.style.cssText = 'position:absolute; inset:0; background:rgba(0,0,0,.92); z-index:100; display:none; flex-direction:column; padding:12px; padding-top:max(calc(env(safe-area-inset-top)+12px),16px);';
+const glogClose = document.createElement('button');
+glogClose.textContent = '✕ 关闭';
+glogClose.style.cssText = 'align-self:flex-end; padding:8px 16px; border-radius:8px; border:none; background:rgba(255,255,255,.15); color:#fff; font-size:15px;';
+const glogTip = document.createElement('div');
+glogTip.textContent = '长按文本框 → 全选 → 复制，发给开发';
+glogTip.style.cssText = 'color:#8cf; font-size:13px; margin:8px 0;';
+const glogTA = document.createElement('textarea');
+glogTA.style.cssText = 'flex:1; width:100%; background:#111; color:#9f9; border:1px solid #333; border-radius:8px; font:11px monospace; white-space:pre;';
+glogPanel.appendChild(glogClose); glogPanel.appendChild(glogTip); glogPanel.appendChild(glogTA);
+modelPage.appendChild(glogBtn); modelPage.appendChild(glogPanel);
+// 用 pointerup 触发（WebView click 可能被吞），并挡掉画布手势
+for (const evt of ['pointerdown', 'pointerup', 'click']) {
+  glogBtn.addEventListener(evt, (e) => e.stopPropagation());
+}
+glogBtn.addEventListener('pointerup', (e) => {
+  e.stopPropagation(); e.preventDefault();
+  glogTA.value = gestureLog.map((l) => JSON.stringify(l)).join('\n');
+  glogPanel.style.display = 'flex';
+  glog('log_opened');
 });
-modelPage.appendChild(glogBtn);
+glogClose.addEventListener('pointerup', (e) => { e.stopPropagation(); glogPanel.style.display = 'none'; });
+for (const evt of ['pointerdown', 'pointermove', 'pointerup']) {
+  glogPanel.addEventListener(evt, (e) => e.stopPropagation());
+}
 window.__svGlog = () => gestureLog.slice();
 glog('glog_ready');
 
