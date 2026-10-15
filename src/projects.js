@@ -82,8 +82,8 @@ export function isDirty(current, saved) {
   if (neq(c.camera.elev, s.camera.elev)) return true;
   if (neq(c.camera.dist, s.camera.dist)) return true;
   if (c.camera.focal.some((v, i) => neq(v, s.camera.focal[i]))) return true;
-  // settings
-  for (const k of ['sens', 'grid', 'axes', 'xform']) {
+  // settings（xform 已废弃，读旧工程时忽略）
+  for (const k of ['sens', 'grid', 'axes']) {
     if (neq(c.settings[k], s.settings[k])) return true;
   }
   return false;

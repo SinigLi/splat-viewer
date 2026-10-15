@@ -146,20 +146,13 @@ canvas.addEventListener('pointermove', (e) => {
   p.y = e.clientY;
 
   if (pointers.size === 1) {
-    if (modelXform) {
-      moveMeshBy(dx, dy);
-    } else {
-      orbitBy(dx, dy);
-    }
+    // 相机手势永远只操作相机（对齐 SuperSplat：模型变换是独立工具，不混入手势层）
+    orbitBy(dx, dy);
   } else if (pointers.size === 2 && pinch.valid) {
     const s = pinchState();
-    if (modelXform) {
-      // 变换模式：捏合缩放模型，双指中点位移忽略（避免和移动混淆）
-      if (pinch.len > 0 && s.len > 0) scaleMeshBy(s.len / pinch.len);
-    } else {
-      // 仅捏合缩放（老板拍板：双指拖平移移除，长按+方向盘覆盖）
-      if (pinch.len > 0 && s.len > 0) zoomBy(pinch.len / s.len);
-    }
+    // 双指：pan + 捏合 zoom（SuperSplat 同款组合）
+    panBy(s.midx - pinch.midx, s.midy - pinch.midy);
+    if (pinch.len > 0 && s.len > 0) zoomBy(pinch.len / s.len);
     pinch = { ...s };
   }
 });
@@ -246,13 +239,8 @@ sensRange.addEventListener('change', saveSettings);
 gridToggle.addEventListener('change', saveSettings);
 axesToggle.addEventListener('change', saveSettings);
 
-// ---- 模型变换模式（参考 SuperSplat splats-transform-handler：
-// 用 TRS 变换作用到模型整体；查看器里等效为变换 splatMesh 本身，
-// 单指拖=屏幕平面移动模型，双指捏合=缩放模型）----
-const xformToggle = document.getElementById('xformToggle');
-let modelXform = false;
-xformToggle.addEventListener('change', () => { modelXform = xformToggle.checked; });
-
+// ---- 模型变换（阶段1将以独立工具按钮回归，参考 SuperSplat move-tool + gizmo；
+// 手势层已解耦：相机手势永不操作模型）----
 function moveMeshBy(dx, dy) {
   const mesh = viewer && viewer.splatMesh;
   if (!mesh) return;
@@ -298,7 +286,6 @@ function collectProject() {
       sens: orbitSensitivity,
       grid: gridToggle.checked,
       axes: axesToggle.checked,
-      xform: xformToggle.checked,
     },
   });
 }
@@ -314,7 +301,6 @@ function applyProject(p) {
   }
   if (typeof s.grid === 'boolean') { gridToggle.checked = s.grid; grid.visible = s.grid; }
   if (typeof s.axes === 'boolean') { axesToggle.checked = s.axes; axes.visible = s.axes; }
-  if (typeof s.xform === 'boolean') { xformToggle.checked = s.xform; modelXform = s.xform; }
   saveSettings();
   // 模型变换（在模型加载后应用）
   pendingMeshXform = extractMeshTransform(p);
@@ -592,7 +578,7 @@ document.getElementById('saveProjBtn').addEventListener('click', async () => {
       },
       settings: {
         sens: orbitSensitivity, grid: gridToggle.checked,
-        axes: axesToggle.checked, xform: xformToggle.checked,
+        axes: axesToggle.checked,
       },
     }, lastModelBytes, lastModelExt);
     await store.write(p.proj, projBytes);
