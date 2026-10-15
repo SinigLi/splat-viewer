@@ -7,11 +7,17 @@ import {
   serializeSettings, parseSettings, SETTINGS_KEY,
   buildProjectZip, parseProjectFile,
 } from './project-state.js';
+import {
+  pathsFor, emptyRegistry, upsertProject, removeProject,
+  validateProjectName, isDirty, parseMeta,
+} from './projects.js';
 
 const hud = document.getElementById('hud');
 const hint = document.getElementById('hint');
-const openBtn = document.getElementById('openBtn');
+const importBtn = document.getElementById('importBtn');
 const fileInput = document.getElementById('fileInput');
+const modelPage = document.getElementById('modelPage');
+const projectsPage = document.getElementById('projectsPage');
 
 function chip(text) {
   const el = document.createElement('div');
@@ -37,7 +43,9 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
 renderer.setSize(window.innerWidth, window.innerHeight);
-document.getElementById('app').appendChild(renderer.domElement);
+// canvas 挂在模型页内（项目列表页是独立 DOM）
+renderer.domElement.style.cssText = 'position:absolute; inset:0;';
+document.getElementById('modelPage').appendChild(renderer.domElement);
 
 // ---- 自有相机 + SuperSplat 式球坐标 orbit 状态 ----
 // 参考 playcanvas/super-splat src/controllers.ts + camera.ts：
@@ -337,17 +345,238 @@ function restorePending() {
   pendingCamera = null;
 }
 
-const saveBtn = document.getElementById('saveBtn');
-const openProjBtn = document.getElementById('openProjBtn');
-const projInput = document.getElementById('projInput');
+// ---- 项目管理器 ----
+// 修复闪退：不再走系统分享，直接存 App 私有目录（Directory.Data，无需权限）
+// 存储：projects/<encoded>/project.svproj + thumb.jpg + meta.json + localStorage 注册表
+let currentProjectName = null;   // 当前打开的项目名
+let lastSavedSnapshot = null;    // 最近一次保存的快照（脏检查用）
 
-saveBtn.addEventListener('click', async () => {
-  if (!currentModelName || !lastModelBytes) { infoChip.textContent = '先加载模型再保存工程'; return; }
-  const base = currentModelName.replace(/\.[^.]+$/, '');
-  const fname = base + '.svproj';
-  infoChip.textContent = '正在打包工程…';
+// base64 工具（native Filesystem 二进制走 base64）
+function bytesToBase64(u8) {
+  let s = '';
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function base64ToBytes(b64) {
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+
+// 存储适配：native = Capacitor Filesystem；web = IndexedDB（跨会话持久）
+const store = Capacitor.isNativePlatform() ? {
+  async write(path, u8) {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+    await Filesystem.writeFile({
+      path, data: bytesToBase64(u8), directory: Directory.Data, recursive: true,
+    });
+  },
+  async read(path) {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+    const r = await Filesystem.readFile({ path, directory: Directory.Data });
+    const data = typeof r.data === 'string' ? r.data : await (async () => {
+      const b = await (/** @type {Blob} */ (r.data)).arrayBuffer();
+      return bytesToBase64(new Uint8Array(b));
+    })();
+    return base64ToBytes(data);
+  },
+  async remove(path) {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+    try { await Filesystem.rmdir({ path, directory: Directory.Data, recursive: true }); } catch (_) {}
+  },
+} : {
+  // web：IndexedDB KV（key=path），测试与桌面预览用
+  _idb() {
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('sv-store', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('files');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  },
+  async write(path, u8) {
+    const db = await this._idb();
+    await new Promise((res, rej) => {
+      const t = db.transaction('files', 'readwrite');
+      t.objectStore('files').put(u8, path);
+      t.oncomplete = () => res(); t.onerror = () => rej(t.error);
+    });
+  },
+  async read(path) {
+    const db = await this._idb();
+    return new Promise((res, rej) => {
+      const t = db.transaction('files').objectStore('files').get(path);
+      t.onsuccess = () => { if (!t.result) throw new Error('不存在: ' + path); res(t.result); };
+      t.onerror = () => rej(t.error);
+    });
+  },
+  async remove(path) {
+    const db = await this._idb();
+    await new Promise((res, rej) => {
+      const t = db.transaction('files', 'readwrite');
+      t.objectStore('files').delete(path);
+      t.oncomplete = () => res(); t.onerror = () => rej(t.error);
+    });
+  },
+};
+
+const REGISTRY_KEY = 'sv-registry';
+function loadRegistry() {
   try {
-    // v2：zip 包 = state.json + 模型字节（自包含，打开一步还原）
+    const raw = localStorage.getItem(REGISTRY_KEY);
+    if (raw) { const r = JSON.parse(raw); if (r && Array.isArray(r.projects)) return r; }
+  } catch (_) {}
+  return emptyRegistry();
+}
+function saveRegistry(reg) {
+  try { localStorage.setItem(REGISTRY_KEY, JSON.stringify(reg)); } catch (_) {}
+}
+
+// 缩略图：渲染一帧后立即截取（preserveDrawingBuffer=false 时必须同 tick）
+function captureThumbJPEG() {
+  try {
+    viewer.render();
+    return renderer.domElement.toDataURL('image/jpeg', 0.7);
+  } catch (_) { return null; }
+}
+
+function showPage(id) {
+  for (const p of [projectsPage, modelPage]) p.classList.remove('active');
+  document.getElementById(id).classList.add('active');
+}
+
+function renderProjectList() {
+  const reg = loadRegistry();
+  const list = document.getElementById('projectList');
+  const empty = document.getElementById('emptyProjects');
+  list.innerHTML = '';
+  empty.style.display = reg.projects.length ? 'none' : 'block';
+  for (const item of reg.projects) {
+    const card = document.createElement('div');
+    card.className = 'projCard';
+    const info = document.createElement('div');
+    info.className = 'projInfo';
+    const name = document.createElement('div');
+    name.className = 'projName';
+    name.textContent = item.name;
+    const sub = document.createElement('div');
+    sub.className = 'projSub';
+    sub.textContent = (item.hasModel ? '已导入模型' : '未导入模型') + ' · ' + (item.updatedAt || '').slice(0, 16).replace('T', ' ');
+    info.appendChild(name); info.appendChild(sub);
+    card.appendChild(info);
+    // 缩略图（异步）
+    const thumbHolder = document.createElement('div');
+    thumbHolder.className = 'projThumbEmpty';
+    thumbHolder.textContent = '🔮';
+    card.insertBefore(thumbHolder, info);
+    if (item.hasModel) {
+      const p = pathsFor(item.name);
+      store.read(p.thumb).then((u8) => {
+        const url = URL.createObjectURL(new Blob([u8], { type: 'image/jpeg' }));
+        const img = document.createElement('img');
+        img.className = 'projThumb';
+        img.src = url;
+        thumbHolder.replaceWith(img);
+      }).catch(() => {});
+    }
+    card.addEventListener('click', () => openProject(item.name));
+    // 删除按钮
+    const del = document.createElement('button');
+    del.className = 'projDelete';
+    del.textContent = '🗑';
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('删除项目「' + item.name + '」？模型数据将一并删除。')) return;
+      const p = pathsFor(item.name);
+      await store.remove(p.dir).catch(() => {});
+      saveRegistry(removeProject(loadRegistry(), item.name));
+      renderProjectList();
+    });
+    card.appendChild(del);
+    list.appendChild(card);
+  }
+}
+
+// 新建项目
+const newProjDialog = document.getElementById('newProjDialog');
+const newProjName = document.getElementById('newProjName');
+document.getElementById('newProjBtn').addEventListener('click', () => {
+  newProjName.value = '';
+  newProjDialog.classList.add('open');
+  setTimeout(() => newProjName.focus(), 50);
+});
+document.getElementById('newProjCancel').addEventListener('click', () => newProjDialog.classList.remove('open'));
+document.getElementById('newProjConfirm').addEventListener('click', createProject);
+newProjName.addEventListener('keydown', (e) => { if (e.key === 'Enter') createProject(); });
+
+async function createProject() {
+  const v = validateProjectName(newProjName.value);
+  if (!v.ok) { newProjName.placeholder = v.reason; return; }
+  const reg = loadRegistry();
+  if (reg.projects.some((p) => p.name === v.name)) {
+    newProjName.value = '';
+    newProjName.placeholder = '项目「' + v.name + '」已存在';
+    return;
+  }
+  newProjDialog.classList.remove('open');
+  // 注册 + 空项目状态
+  saveRegistry(upsertProject(loadRegistry(), {
+    name: v.name, updatedAt: new Date().toISOString(), hasModel: false,
+  }));
+  await enterEmptyProject(v.name);
+}
+
+async function enterEmptyProject(name) {
+  currentProjectName = name;
+  lastSavedSnapshot = null;
+  // 清空场景
+  try { if (viewer) { await viewer.dispose(); } } catch (_) {}
+  viewer = createViewer();
+  currentModelName = null;
+  lastModelBytes = null;
+  lastModelExt = null;
+  pendingMeshXform = null;
+  pendingCamera = null;
+  hint.style.display = 'flex';
+  infoChip.textContent = '项目「' + name + '」— 请导入模型';
+  showPage('modelPage');
+}
+
+// 打开项目
+async function openProject(name) {
+  try {
+    const p = pathsFor(name);
+    const projBytes = await store.read(p.proj);
+    const proj = parseProjectFile(projBytes);
+    const meta = await store.read(p.meta).then((u8) => parseMeta(new TextDecoder().decode(u8))).catch(() => null);
+    currentProjectName = name;
+    applyProject(proj.state);
+    lastSavedSnapshot = proj.state;
+    if (proj.modelBytes) {
+      await loadModelBytes(proj.modelBytes, proj.state.model.fileName || ('model.' + proj.modelExt), proj.modelExt);
+    } else {
+      // 纯状态工程（未导入过模型）
+      try { if (viewer) { await viewer.dispose(); } } catch (_) {}
+      viewer = createViewer();
+      currentModelName = null; lastModelBytes = null; lastModelExt = null;
+      hint.style.display = 'flex';
+      infoChip.textContent = '项目「' + name + '」— 请导入模型';
+    }
+    if (meta) infoChip.textContent = meta.name + ' 已打开';
+    showPage('modelPage');
+  } catch (err) {
+    console.error(err);
+    alert('打开项目失败: ' + (err && err.message ? err.message : '未知错误'));
+  }
+}
+
+// 保存当前项目（写入 App 私有目录，不走系统分享 → 闪退根除）
+document.getElementById('saveProjBtn').addEventListener('click', async () => {
+  if (!currentProjectName) { infoChip.textContent = '未在项目中'; return; }
+  infoChip.textContent = '正在保存…';
+  try {
+    const p = pathsFor(currentProjectName);
     const projBytes = buildProjectZip({
       modelName: currentModelName,
       mesh: (() => {
@@ -359,70 +588,64 @@ saveBtn.addEventListener('click', async () => {
         } : null;
       })(),
       camera: {
-        azim: orbit.azim,
-        elev: orbit.elev,
-        dist: orbit.dist,
-        focal: orbit.focal.toArray(),
+        azim: orbit.azim, elev: orbit.elev, dist: orbit.dist, focal: orbit.focal.toArray(),
       },
       settings: {
-        sens: orbitSensitivity,
-        grid: gridToggle.checked,
-        axes: axesToggle.checked,
-        xform: xformToggle.checked,
+        sens: orbitSensitivity, grid: gridToggle.checked,
+        axes: axesToggle.checked, xform: xformToggle.checked,
       },
     }, lastModelBytes, lastModelExt);
-
-    if (Capacitor.isNativePlatform()) {
-      // 安卓：写缓存后走系统分享面板（用户可选存到文件管理器/发送任意 App）
-      const { Filesystem, Directory } = await import('@capacitor/filesystem');
-      const { Share } = await import('@capacitor/share');
-      const w = await Filesystem.writeFile({
-        path: fname,
-        data: projBytes,   // 二进制 zip，不设 encoding
-        directory: Directory.Cache,
-      });
-      await Share.share({ title: fname, url: w.uri });
-      infoChip.textContent = '工程已通过系统分享导出: ' + fname + ' (' + fmtBytes(projBytes.length) + ')';
-    } else {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([projBytes], { type: 'application/zip' }));
-      a.download = fname;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
-      infoChip.textContent = '工程已下载: ' + fname + ' (' + fmtBytes(projBytes.length) + ')';
+    await store.write(p.proj, projBytes);
+    // 缩略图 + meta（有模型才更新缩略图）
+    if (lastModelBytes) {
+      const thumb = captureThumbJPEG();
+      if (thumb) {
+        const thumbBytes = new Uint8Array(await (await fetch(thumb)).arrayBuffer());
+        await store.write(p.thumb, thumbBytes);
+      }
     }
+    const meta = { name: currentProjectName, updatedAt: new Date().toISOString(), hasModel: !!lastModelBytes };
+    await store.write(p.meta, new TextEncoder().encode(JSON.stringify(meta)));
+    saveRegistry(upsertProject(loadRegistry(), meta));
+    lastSavedSnapshot = collectProject();
+    infoChip.textContent = '已保存「' + currentProjectName + '」(' + fmtBytes(projBytes.length) + ')';
   } catch (err) {
     console.error(err);
     infoChip.textContent = '保存失败: ' + (err && err.message ? err.message : '未知错误');
   }
 });
 
-openProjBtn.addEventListener('click', () => projInput.click());
-projInput.addEventListener('change', async () => {
-  const f = projInput.files && projInput.files[0];
-  projInput.value = '';
-  if (!f) return;
-  try {
-    infoChip.textContent = '正在读取工程…';
-    const bytes = new Uint8Array(await f.arrayBuffer());
-    const proj = parseProjectFile(bytes);
-    if (proj.kind === 'v2') {
-      // 自包含工程：状态 + 模型一次到位
-      applyProject(proj.state);
-      infoChip.textContent = '工程已读（含模型），加载中…';
-      await loadModelBytes(proj.modelBytes, proj.state.model.fileName || 'model.' + proj.modelExt, proj.modelExt);
-      return;
-    }
-    // v1 旧格式：只有状态，需重选模型
-    const modelName = applyProject(proj.state);
-    infoChip.textContent = '旧版工程：请选择模型文件' + (modelName ? '「' + modelName + '」' : '');
-    pendingProjName = modelName;
-    fileInput.click();
-  } catch (err) {
-    console.error(err);
-    infoChip.textContent = '打开工程失败: ' + (err && err.message ? err.message : '无效文件');
+// 返回列表（脏检查 → 退出确认）
+const exitDialog = document.getElementById('exitDialog');
+document.getElementById('backBtn').addEventListener('click', () => {
+  const current = collectProject();
+  current.hasModel = !!lastModelBytes;
+  if (isDirty(current, lastSavedSnapshot)) {
+    exitDialog.classList.add('open');
+  } else {
+    showProjectsPage();
   }
 });
+document.getElementById('exitSave').addEventListener('click', async () => {
+  exitDialog.classList.remove('open');
+  document.getElementById('saveProjBtn').click();
+  showProjectsPage();
+});
+document.getElementById('exitDiscard').addEventListener('click', () => {
+  exitDialog.classList.remove('open');
+  showProjectsPage();
+});
+document.getElementById('exitCancel').addEventListener('click', () => {
+  exitDialog.classList.remove('open');
+});
+
+function showProjectsPage() {
+  renderProjectList();
+  showPage('projectsPage');
+}
+
+// 启动进入项目列表
+renderProjectList();
 let pendingProjName = null;
 
 // ---- 打开文件 ----
@@ -517,7 +740,7 @@ async function openFile(file) {
   await loadModelBytes(bytes, file.name, ext);
 }
 
-openBtn.addEventListener('click', () => fileInput.click());
+importBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
   const f = fileInput.files && fileInput.files[0];
   if (f) openFile(f);
@@ -539,6 +762,8 @@ let frames = 0, last = performance.now();
 let loopErr = null;
 (function loop() {
   requestAnimationFrame(loop);
+  // 项目列表页在前台时跳过渲染
+  if (!modelPage.classList.contains('active')) return;
   try {
     viewer.update();
     viewer.render();
@@ -564,4 +789,8 @@ let loopErr = null;
 })();
 
 // 调试钩子
-window.__sv = { get viewer() { return viewer; }, renderer, camera, orbit, helpersScene, collectProject };
+window.__sv = {
+  get viewer() { return viewer; }, renderer, camera, orbit, helpersScene, collectProject,
+  get currentProjectName() { return currentProjectName; },
+  get lastSavedSnapshot() { return lastSavedSnapshot; },
+};

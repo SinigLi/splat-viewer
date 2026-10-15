@@ -124,13 +124,17 @@ export function parseSettings(raw) {
  * @returns {Uint8Array} zip 字节
  */
 export function buildProjectZip(state, modelBytes, modelExt) {
+  const snapshot = collectProject(state);
+  if (modelBytes == null) {
+    // 纯状态工程（未导入模型）：只存 state.json
+    return zipSync({ [STATE_ENTRY]: strToU8(JSON.stringify(snapshot)) });
+  }
   if (!(modelBytes instanceof Uint8Array) || modelBytes.length === 0) {
     throw new Error('模型数据为空，无法保存工程');
   }
   if (!['ply', 'splat', 'ksplat'].includes(modelExt)) {
     throw new Error('不支持的模型格式: ' + modelExt);
   }
-  const snapshot = collectProject(state);
   return zipSync({
     [STATE_ENTRY]: strToU8(JSON.stringify(snapshot)),
     ['model.' + modelExt]: modelBytes,
@@ -159,7 +163,10 @@ export function parseProjectFile(bytes) {
   if (!files[STATE_ENTRY]) throw new Error('工程文件缺少 state.json');
   const state = parseProject(strFromU8(files[STATE_ENTRY]));
   const modelEntry = Object.keys(files).find((k) => MODEL_ENTRY_RE.test(k));
-  if (!modelEntry) throw new Error('工程文件缺少模型数据');
+  if (!modelEntry) {
+    // 纯状态工程（未导入模型）：modelBytes 为 null
+    return { kind: 'v2', state, modelBytes: null, modelExt: null };
+  }
   return {
     kind: 'v2',
     state,

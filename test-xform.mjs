@@ -1,5 +1,5 @@
-// test-xform.mjs - verify toggle defaults, transform mode: move + scale mesh
-const CDP_PORT = '9228';
+﻿// test-xform.mjs - verify toggle defaults, transform mode: move + scale mesh
+const CDP_PORT = '9223';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const tab = await (await fetch(`http://localhost:${CDP_PORT}/json/new?${encodeURIComponent('http://localhost:4173/')}`, { method: 'PUT' })).json();
@@ -53,3 +53,4 @@ if (shot.result?.data) {
 }
 console.log(JSON.stringify(out, null, 1));
 ws.close(); process.exit(0);
+

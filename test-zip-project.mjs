@@ -1,8 +1,8 @@
-// test-zip-project.mjs - v2 zip project round-trip via UI:
+﻿// test-zip-project.mjs - v2 zip project round-trip via UI:
 // session1: load model, change state, save (intercept download blob bytes)
 // session2: fresh page, open .svproj -> verify auto-load (no second file pick)
 import { writeFileSync } from 'node:fs';
-const CDP_PORT = '9228';
+const CDP_PORT = '9223';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const mkTab = async () => {
@@ -67,3 +67,4 @@ if (shot.result?.data) {
 }
 console.log(JSON.stringify(out, null, 1));
 s2.ws.close(); process.exit(0);
+

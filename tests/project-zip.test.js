@@ -21,9 +21,18 @@ describe('buildProjectZip', () => {
     expect(z[1]).toBe(0x4b);
   });
 
-  it('拒绝空模型数据', () => {
+  it('拒绝空字节数组模型数据', () => {
     expect(() => buildProjectZip(state, new Uint8Array(0), 'ply')).toThrow('模型数据为空');
-    expect(() => buildProjectZip(state, null, 'ply')).toThrow();
+  });
+
+  it('modelBytes=null 允许：生成纯状态工程（未导入模型）', () => {
+    const noModel = { ...state, modelName: null, mesh: null };
+    const z = buildProjectZip(noModel, null, null);
+    expect(z[0]).toBe(0x50);
+    const out = parseProjectFile(z);
+    expect(out.kind).toBe('v2');
+    expect(out.modelBytes).toBeNull();
+    expect(out.state.model.fileName).toBeNull();
   });
 
   it('拒绝不支持的模型格式', () => {
@@ -55,9 +64,12 @@ describe('parseProjectFile', () => {
     expect(() => parseProjectFile(bad)).toThrow('state.json');
   });
 
-  it('拒绝缺模型数据的 zip', () => {
+  it('拒绝缺模型数据的 zip（无 state 时报缺模型）', () => {
     const bad = zipSync({ [STATE_ENTRY]: strToU8(JSON.stringify(collectProject(state))) });
-    expect(() => parseProjectFile(bad)).toThrow('模型数据');
+    // 含合法 state 但无模型条目 → 纯状态工程，modelBytes=null（v2 新语义）
+    const out = parseProjectFile(bad);
+    expect(out.kind).toBe('v2');
+    expect(out.modelBytes).toBeNull();
   });
 
   it('拒绝损坏的 zip', () => {

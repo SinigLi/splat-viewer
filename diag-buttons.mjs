@@ -1,5 +1,5 @@
-// diag-buttons.mjs - capture console errors on load + check button bindings
-const CDP_PORT = '9228';
+﻿// diag-buttons.mjs - capture console errors on load + check button bindings
+const CDP_PORT = '9223';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const tab = await (await fetch(`http://localhost:${CDP_PORT}/json/new?${encodeURIComponent('http://localhost:4173/')}`, { method: 'PUT' })).json();
 const ws = new WebSocket(tab.webSocketDebuggerUrl);
@@ -30,3 +30,4 @@ out.openBtnText = await ev(`document.getElementById('openBtn')?.textContent`);
 out.btnVisible = await ev(`JSON.stringify(['openBtn','openProjBtn','saveBtn'].map(id => { const b = document.getElementById(id); const r = b.getBoundingClientRect(); return { id, w: r.width, h: r.height, top: r.top }; }))`);
 console.log(JSON.stringify(out, null, 1));
 ws.close(); process.exit(0);
+

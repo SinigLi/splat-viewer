@@ -1,8 +1,8 @@
-// test-project.mjs - verify .svproj save/open round-trip:
+﻿// test-project.mjs - verify .svproj save/open round-trip:
 // session1: load model, transform mesh + orbit + settings -> collectProject -> write file
 // session2: fresh page -> open project -> pick model -> verify state restored
 import { writeFileSync } from 'node:fs';
-const CDP_PORT = '9228';
+const CDP_PORT = '9223';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const mkTab = async () => {
@@ -71,3 +71,4 @@ if (shot.result?.data) {
 }
 console.log(JSON.stringify(out, null, 1));
 s2.ws.close(); process.exit(0);
+

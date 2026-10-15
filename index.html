@@ -8,35 +8,100 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #111; touch-action: none; }
   #app { width: 100%; height: 100%; position: relative; }
+
+  /* ===== 页面切换 ===== */
+  .page { position: absolute; inset: 0; display: none; }
+  .page.active { display: block; }
+
+  /* ===== 项目列表页 ===== */
+  #projectsPage { background: #141416; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #projectsHeader {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: max(14px, env(safe-area-inset-top)) 16px 12px;
+    background: rgba(20,20,22,.96);
+  }
+  #projectsHeader h1 { color: #fff; font: 600 18px system-ui; }
+  #newProjBtn {
+    background: #2563eb; color: #fff; border: none; border-radius: 22px;
+    padding: 9px 18px; font-size: 14px;
+  }
+  #projectList { padding: 8px 16px max(24px, env(safe-area-inset-bottom)); }
+  .projCard {
+    display: flex; gap: 12px; align-items: center;
+    background: #1e1e22; border-radius: 14px; padding: 10px 12px; margin-bottom: 10px;
+    cursor: pointer;
+  }
+  .projCard:active { background: #2a2a30; }
+  .projThumb {
+    width: 84px; height: 84px; border-radius: 10px; background: #0a0a0a;
+    object-fit: cover; flex: none;
+  }
+  .projThumbEmpty {
+    width: 84px; height: 84px; border-radius: 10px; background: #0a0a0a; flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 28px;
+  }
+  .projInfo { flex: 1; min-width: 0; }
+  .projName { color: #fff; font: 500 15px system-ui; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .projSub { color: #888; font: 12px system-ui; margin-top: 4px; }
+  .projDelete {
+    flex: none; background: none; border: none; color: #666; font-size: 18px; padding: 8px;
+  }
+  #emptyProjects {
+    text-align: center; color: #666; font: 14px system-ui;
+    padding: 80px 32px;
+  }
+
+  /* 新建项目对话框 */
+  #newProjDialog {
+    position: absolute; inset: 0; z-index: 60; display: none;
+    background: rgba(0,0,0,.6); align-items: center; justify-content: center;
+  }
+  #newProjDialog.open { display: flex; }
+  #newProjDialog .box {
+    width: 300px; background: #222226; border-radius: 16px; padding: 20px;
+    color: #eee; font: 14px system-ui;
+  }
+  #newProjDialog input {
+    width: 100%; margin: 12px 0 16px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid #444; background: #111; color: #fff; font-size: 15px;
+  }
+  #newProjDialog .btns { display: flex; gap: 10px; justify-content: flex-end; }
+  #newProjDialog button {
+    border: none; border-radius: 10px; padding: 9px 18px; font-size: 14px;
+  }
+  #newProjCancel { background: #3a3a40; color: #ddd; }
+  #newProjConfirm { background: #2563eb; color: #fff; }
+
+  /* ===== 模型页 ===== */
+  #modelPage { background: #111; }
   #hud {
-    position: absolute; top: max(8px, env(safe-area-inset-top)); left: 8px; right: 8px;
+    position: absolute; top: max(8px, env(safe-area-inset-top)); left: 64px; right: 8px;
     display: flex; gap: 6px; flex-wrap: wrap; z-index: 20; pointer-events: none;
   }
   .chip {
     background: rgba(0,0,0,.62); color: #fff; font: 12px/1.6 system-ui, sans-serif;
     padding: 3px 10px; border-radius: 999px; white-space: nowrap;
   }
-  #toolbar {
-    position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: 8px; right: 8px;
-    display: flex; justify-content: center; gap: 8px; z-index: 20; flex-wrap: wrap;
-  }
-  #openBtn {
-    background: #2563eb; color: #fff; border: none; border-radius: 24px;
-    padding: 12px 24px; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.45);
-  }
-  .ghost {
-    background: rgba(0,0,0,.62); color: #ddd; border: 1px solid #444; border-radius: 24px;
-    padding: 12px 16px; font-size: 13px;
+  #backBtn {
+    position: absolute; top: max(8px, env(safe-area-inset-top)); left: 8px;
+    width: 40px; height: 40px; border-radius: 50%; border: none;
+    background: rgba(0,0,0,.62); color: #fff; font-size: 18px; z-index: 30;
   }
   #settingsBtn {
-    position: absolute; top: max(8px, env(safe-area-inset-top)); right: 8px;
+    position: absolute; top: max(calc(env(safe-area-inset-top) + 48px), 56px); left: 8px;
     width: 40px; height: 40px; border-radius: 50%; border: none;
-    background: rgba(0,0,0,.62); color: #fff; font-size: 20px; z-index: 30;
+    background: rgba(0,0,0,.62); color: #fff; font-size: 18px; z-index: 30;
+  }
+  #saveProjBtn {
+    position: absolute; top: max(calc(env(safe-area-inset-top) + 96px), 104px); left: 8px;
+    width: 40px; height: 40px; border-radius: 50%; border: none;
+    background: rgba(0,0,0,.62); color: #fff; font-size: 17px; z-index: 30;
   }
   #settingsPanel {
-    position: absolute; top: max(56px, calc(env(safe-area-inset-top) + 48px)); right: 8px;
+    position: absolute; top: max(calc(env(safe-area-inset-top) + 96px), 104px); left: 56px;
     width: 240px; background: rgba(20,20,24,.94); border-radius: 14px;
-    padding: 14px; z-index: 30; display: none; color: #eee; font: 13px system-ui;
+    padding: 14px; z-index: 40; display: none; color: #eee; font: 13px system-ui;
     box-shadow: 0 6px 22px rgba(0,0,0,.5);
   }
   #settingsPanel.open { display: block; }
@@ -50,33 +115,94 @@
     align-items: center; justify-content: center; color: #888; z-index: 10;
     font: 14px system-ui; text-align: center; padding: 0 32px;
   }
+  #importBtn {
+    background: #2563eb; color: #fff; border: none; border-radius: 24px;
+    padding: 12px 28px; font-size: 15px; box-shadow: 0 4px 14px rgba(0,0,0,.45);
+    margin-top: 6px;
+  }
+  /* 退出确认 */
+  #exitDialog {
+    position: absolute; inset: 0; z-index: 70; display: none;
+    background: rgba(0,0,0,.6); align-items: center; justify-content: center;
+  }
+  #exitDialog.open { display: flex; }
+  #exitDialog .box {
+    width: 300px; background: #222226; border-radius: 16px; padding: 20px;
+    color: #eee; font: 14px system-ui;
+  }
+  #exitDialog .btns { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  #exitDialog button { border: none; border-radius: 10px; padding: 11px; font-size: 14px; }
+  #exitSave { background: #2563eb; color: #fff; }
+  #exitDiscard { background: #3a3a40; color: #ddd; }
+  #exitCancel { background: none; color: #888; }
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="hud"></div>
-  <button id="settingsBtn">⚙️</button>
-  <div id="settingsPanel">
-    <div class="row">
-      <label><span>旋转灵敏度</span><span id="sensVal">0.3</span></label>
-      <input id="sensRange" type="range" min="0.1" max="1.0" step="0.05" value="0.3">
+
+  <!-- 项目列表页 -->
+  <div id="projectsPage" class="page active">
+    <div id="projectsHeader">
+      <h1>🔮 我的项目</h1>
+      <button id="newProjBtn">＋ 新建</button>
     </div>
-    <div class="toggle"><span>地面网格</span><input id="gridToggle" type="checkbox"></div>
-    <div class="toggle"><span>坐标轴</span><input id="axesToggle" type="checkbox"></div>
-    <div class="toggle"><span>模型变换模式</span><input id="xformToggle" type="checkbox"></div>
-    <div style="margin-top:8px; color:#888; font-size:11px">变换模式：单指拖=移动模型，双指捏合=缩放模型</div>
+    <div id="projectList"></div>
+    <div id="emptyProjects" style="display:none">
+      <div style="font-size:44px">📁</div>
+      <div style="margin-top:10px">还没有项目<br>点击右上角「＋ 新建」开始</div>
+    </div>
   </div>
-  <div id="hint">
-    <div style="font-size:40px">🔮</div>
-    <div>点击下方按钮选择 .ply / .splat / .ksplat 文件<br>全程本地处理，不联网</div>
+
+  <!-- 模型页 -->
+  <div id="modelPage" class="page">
+    <button id="backBtn">←</button>
+    <button id="settingsBtn">⚙️</button>
+    <button id="saveProjBtn">💾</button>
+    <div id="hud"></div>
+    <div id="settingsPanel">
+      <div class="row">
+        <label><span>旋转灵敏度</span><span id="sensVal">0.3</span></label>
+        <input id="sensRange" type="range" min="0.1" max="1.0" step="0.05" value="0.3">
+      </div>
+      <div class="toggle"><span>地面网格</span><input id="gridToggle" type="checkbox"></div>
+      <div class="toggle"><span>坐标轴</span><input id="axesToggle" type="checkbox"></div>
+      <div class="toggle"><span>模型变换模式</span><input id="xformToggle" type="checkbox"></div>
+      <div style="margin-top:8px; color:#888; font-size:11px">变换模式：单指拖=移动模型，双指捏合=缩放模型</div>
+    </div>
+    <div id="hint">
+      <div style="font-size:40px">🔮</div>
+      <div>导入 .ply / .splat / .ksplat 文件开始<br>全程本地处理，不联网</div>
+      <button id="importBtn">📂 导入模型</button>
+    </div>
+    <input id="fileInput" type="file" accept=".ply,.splat,.ksplat" style="display:none">
+    <input id="projInput" type="file" style="display:none">
   </div>
-  <div id="toolbar">
-    <button id="openBtn">📂 打开模型</button>
-    <button id="openProjBtn" class="ghost">📁 打开工程</button>
-    <button id="saveBtn" class="ghost">💾 保存工程</button>
+
+  <!-- 新建项目对话框 -->
+  <div id="newProjDialog">
+    <div class="box">
+      <div>新建项目</div>
+      <input id="newProjName" placeholder="输入项目名称" maxlength="50">
+      <div class="btns">
+        <button id="newProjCancel">取消</button>
+        <button id="newProjConfirm">创建</button>
+      </div>
+    </div>
   </div>
-  <input id="fileInput" type="file" accept=".ply,.splat,.ksplat" style="display:none">
-  <input id="projInput" type="file" style="display:none">
+
+  <!-- 退出确认对话框 -->
+  <div id="exitDialog">
+    <div class="box">
+      <div>有未保存的更改</div>
+      <div style="color:#999; margin-top:6px; font-size:12px">退出前要保存当前项目吗？</div>
+      <div class="btns">
+        <button id="exitSave">💾 保存并退出</button>
+        <button id="exitDiscard">直接退出</button>
+        <button id="exitCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 <script type="module" src="/src/main.js"></script>
 </body>

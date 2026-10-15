@@ -1,5 +1,5 @@
-// test-settings.mjs - verify settings panel: open, sensitivity slider, grid/axes toggles
-const CDP_PORT = '9228';
+﻿// test-settings.mjs - verify settings panel: open, sensitivity slider, grid/axes toggles
+const CDP_PORT = '9223';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 const tab = await (await fetch(`http://localhost:${CDP_PORT}/json/new?${encodeURIComponent('http://localhost:4173/')}`, { method: 'PUT' })).json();
@@ -53,3 +53,4 @@ if (shot.result?.data) {
 out.loopErr = await ev(`window.__svLoopError || null`);
 console.log(JSON.stringify(out, null, 1));
 ws.close(); process.exit(0);
+
